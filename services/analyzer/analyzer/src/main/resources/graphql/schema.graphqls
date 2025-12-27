@@ -1,0 +1,48 @@
+type Query {
+    getSlowestQueries(limit: Int): [TraceRecord]
+    getAnomalyCount: Int
+    getPendingProposals: [OptimizationProposal]
+}
+
+type Mutation {
+    submitTrace(traceId: String, duration: Int, query: String): SimulationResponse
+    approveProposal(id: ID!): OptimizationProposal
+    rejectProposal(id: ID!): OptimizationProposal
+}
+
+type Subscription {
+    liveAlerts: AnomalyAlert
+}
+
+type TraceRecord {
+    traceId: String
+    serviceName: String
+    operationName: String
+    durationMs: Float
+    sqlText: String
+    timestamp: String
+}
+
+type AnomalyAlert {
+    serviceName: String
+    latency: Float
+    culpritSql: String
+    aiSuggestion: String
+    timestamp: String
+}
+
+type SimulationResponse {
+    status: String
+    message: String
+}
+
+type OptimizationProposal {
+    id: ID!
+    traceId: String
+    serviceName: String
+    culpritSql: String
+    aiSuggestion: String
+    status: String
+    createdAt: String
+    reviewedAt: String
+}

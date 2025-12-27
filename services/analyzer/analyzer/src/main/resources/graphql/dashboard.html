@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APIFlow Command Center</title>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 15px;
+        }
+
+        h1 { color: #58a6ff; margin: 0; }
+
+        .status-bar {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            font-size: 0.9em;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .connected { background: #238636; color: white; }
+        .disconnected { background: #da3633; color: white; }
+        .history-badge { background: #1f6feb; color: white; display: none; }
+
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            margin-top: 10px;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 5px solid #d2a8ff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .card.history {
+            border-left: 5px solid #8b949e;
+            opacity: 0.85;
+        }
+
+        .latency {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #ff7b72;
+            margin: 5px 0;
+        }
+
+        .sql {
+            background: #000;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 0.85em;
+            color: #a5d6ff;
+            overflow-x: auto;
+        }
+
+        .fix {
+            margin-top: 8px;
+            color: #7ee787;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    <h1>APIFlow Live</h1>
+    <div class="status-bar">
+        <span id="hist-status" class="badge history-badge">History Loaded</span>
+        <span id="ws-status" class="badge disconnected">Connecting...</span>
+    </div>
+</div>
+
+<div id="feed"></div>
+
+<script>
+    const API_BASE = "http://localhost:8090";
+
+    const feed = document.getElementById("feed");
+    const wsStatus = document.getElementById("ws-status");
+    const histStatus = document.getElementById("hist-status");
+    const seenIds = new Set();
+
+    async function loadHistory() {
+        try {
+            const response = await fetch(`${API_BASE}/graphql`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    query: `
+                        query {
+                            getSlowestQueries(limit: 5) {
+                                traceId
+                                serviceName
+                                durationMs
+                                sqlText
+                            }
+                        }
+                    `
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.data && result.data.getSlowestQueries) {
+                result.data.getSlowestQueries.forEach(t => {
+                    addCard({
+                        ...t,
+                        aiSuggestion: "Historical Log (re-run traffic to generate new fix)",
+                        timestamp: "PREVIOUS SESSION"
+                    }, true);
+                });
+                histStatus.style.display = "inline";
+            }
+        } catch (e) {
+            console.warn("History fetch skipped:", e);
+        }
+    }
+
+    function connect() {
+        const socket = new WebSocket(`${API_BASE.replace("http", "ws")}/graphql`, "graphql-transport-ws");
+
+        socket.onopen = () => {
+            wsStatus.innerText = "Handshaking...";
+            wsStatus.style.background = "#e3b341";
+            socket.send(JSON.stringify({ type: "connection_init" }));
+        };
+
+        socket.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+
+            if (msg.type === "connection_ack") {
+                wsStatus.innerText = "🟢 Live Stream";
+                wsStatus.className = "badge connected";
+
+                socket.send(JSON.stringify({
+                    id: "1",
+                    type: "subscribe",
+                    payload: {
+                        query: `
+                            subscription {
+                                liveAlerts {
+                                    serviceName
+                                    latency
+                                    culpritSql
+                                    aiSuggestion
+                                    timestamp
+                                }
+                            }
+                        `
+                    }
+                }));
+                return;
+            }
+
+            if (msg.type === "next" && msg.id === "1") {
+                const data = msg.payload?.data?.liveAlerts;
+                if (data) addCard(data, false);
+            }
+        };
+
+        socket.onerror = () => {
+            wsStatus.innerText = "Error";
+            wsStatus.className = "badge disconnected";
+        };
+
+        socket.onclose = () => {
+            wsStatus.innerText = "Disconnected";
+            wsStatus.className = "badge disconnected";
+            setTimeout(connect, 3000);
+        };
+    }
+
+    function safe(v, f = "") {
+        return v === null || v === undefined ? f : v;
+    }
+
+    function formatTime(ts) {
+        if (!ts || typeof ts !== "string") return "unknown-time";
+        if (ts.includes("T")) {
+            return ts.split("T")[1].split(".")[0]; // HH:mm:ss
+        }
+        return ts;
+    }
+
+    function addCard(data, isHistory) {
+        console.log("New Card Data:", data);
+
+        const key = data.traceId ||
+                   (data.timestamp && data.latency ? data.timestamp + "_" + data.latency : Math.random());
+
+        if (seenIds.has(key)) return;
+        seenIds.add(key);
+
+        const div = document.createElement("div");
+        div.className = isHistory ? "card history" : "card";
+
+        const serviceName = safe(data.serviceName, "unknown-service");
+        const timeStr = formatTime(data.timestamp);
+
+        const latency = typeof data.latency === "number" ? data.latency :
+                        (typeof data.durationMs === "number" ? data.durationMs : 0);
+
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; color:#8b949e; font-size:0.9em">
+                <span>${serviceName}</span>
+                <span>${timeStr}</span>
+            </div>
+            <div class="latency">🚨 ${latency.toFixed(2)} ms</div>
+            <div class="sql">${safe(data.sqlText, data.culpritSql || "N/A")}</div>
+            <div class="fix">💡 ${safe(data.aiSuggestion, "No suggestion")}</div>
+        `;
+
+        if (!isHistory) {
+            div.style.borderLeft = "5px solid #ff7b72"; // Red border for new alerts
+            div.style.animation = "fadeIn 0.5s";
+        }
+
+        feed.prepend(div);
+    }
+
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = `
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    `;
+    document.head.appendChild(styleSheet);
+
+    loadHistory();
+    connect();
+</script>
+
+</body>
+</html>

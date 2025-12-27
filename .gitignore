@@ -1,0 +1,93 @@
+############################################
+# Java / Maven / Gradle
+############################################
+target/
+**/target/
+*.jar
+*.log
+.mvn/wrapper/maven-wrapper.jar
+
+############################################
+# Terraform (CRITICAL)
+############################################
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+############################################
+# Kafka Streams (Local State)
+############################################
+kafka-streams-state/
+tmp/
+.state/
+rocksdb/
+**/rocksdb/
+
+############################################
+# Docker
+############################################
+.env
+.env.*
+docker-compose.override.yml
+
+############################################
+# IDE / OS
+############################################
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+############################################
+# Python
+############################################
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+
+############################################
+# Node / Frontend
+############################################
+node_modules/
+dist/
+build/
+.npm/
+.yarn/
+.pnpm-store/
+
+############################################
+# Logs / Runtime Artifacts
+############################################
+logs/
+*.out
+*.pid
+
+############################################
+# ML / Model Artifacts
+############################################
+*.h5
+*.ckpt
+*.pb
+*.pt
+*.onnx
+*.joblib
+*.pkl
+*.model
+
+############################################
+# Local configs / secrets
+############################################
+application-local.yml
+application-dev.yml
+*.secret
+*.key
+*.pem
